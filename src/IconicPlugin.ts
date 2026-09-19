@@ -530,6 +530,10 @@ export default class IconicPlugin extends Plugin {
 
 		managers.delete(undefined);
 		for (const manager of managers) manager?.refreshIcons();
+
+		if (categories.includes('tab') || categories.includes('file')) {
+			this.app.workspace.trigger('vertical-tabs:request-icon-refresh');
+		}
 	}
 
 	/**
@@ -652,6 +656,13 @@ export default class IconicPlugin extends Plugin {
 			}
 		});
 		return tab;
+	}
+
+	/**
+	 * Get tab definition from a workspace leaf.
+	 */
+	getTabItemFromLeaf(leaf: WorkspaceLeaf, unloading?: boolean): TabItem {
+		return this.defineTabItem(leaf, unloading);
 	}
 
 	/**

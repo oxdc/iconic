@@ -1,4 +1,4 @@
-import { Platform } from 'obsidian';
+import { Platform, WorkspaceLeaf } from 'obsidian';
 import IconicPlugin, { Category, FileItem, TabItem, STRINGS } from 'src/IconicPlugin.js';
 import IconManager from 'src/managers/IconManager.js';
 import RuleEditor from 'src/dialogs/RuleEditor.js';
@@ -12,6 +12,10 @@ export default class TabIconManager extends IconManager {
 		super(plugin);
 		this.plugin.registerEvent(this.app.workspace.on('layout-change', () => this.refreshIcons()));
 		this.plugin.registerEvent(this.app.workspace.on('active-leaf-change', () => this.refreshIcons()));
+		// @ts-expect-error (Vertical Tabs API)
+		this.plugin.registerEvent(this.app.workspace.on('vertical-tabs:render-tab-icon',
+			(leaf: WorkspaceLeaf, iconEl: HTMLElement) => { this.refreshVerticalTabIcon(leaf, iconEl); }
+		));
 
 		// Refresh icons in tab selector dropdowns ▼
 		const tabListEls = activeDocument.body.findAll('.mod-root .workspace-tab-header-tab-list > .clickable-icon');
@@ -60,6 +64,41 @@ export default class TabIconManager extends IconManager {
 		}
 
 		this.refreshIcons();
+		this.app.workspace.trigger('vertical-tabs:request-icon-refresh');
+	}
+
+	/**
+	 * Refresh a tab icon inside the Vertical Tabs sidebar.
+	 */
+	private refreshVerticalTabIcon(leaf: WorkspaceLeaf, iconEl: HTMLElement): void {
+		const tab = this.plugin.getTabItemFromLeaf(leaf);
+		const rule = tab.category === 'file'
+			? this.plugin.ruleManager?.checkRuling('file', tab.id) ?? tab
+			: tab;
+		if (!rule.icon) return;
+
+		if (tab.isRoot && this.plugin.isSettingEnabled('clickableIcons')) {
+			if (tab.category === 'file') {
+				const file = this.plugin.getFileItem(tab.id);
+				this.refreshIcon(rule, iconEl, event => {
+					IconPicker.openSingle(this.plugin, file, (newIcon, newColor) => {
+						this.plugin.saveFileIcon(file, newIcon, newColor);
+						this.plugin.refreshManagers('file');
+					});
+					event.stopPropagation();
+				});
+			} else {
+				this.refreshIcon(rule, iconEl, event => {
+					IconPicker.openSingle(this.plugin, tab, (newIcon, newColor) => {
+						this.plugin.saveTabIcon(tab, newIcon, newColor);
+						this.plugin.refreshManagers('tab');
+					});
+					event.stopPropagation();
+				});
+			}
+		} else {
+			this.refreshIcon(rule, iconEl);
+		}
 	}
 
 	/**
