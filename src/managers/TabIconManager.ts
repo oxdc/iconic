@@ -1,8 +1,9 @@
-import { Platform, WorkspaceLeaf } from 'obsidian';
+import { Menu, MenuItem, Platform, WorkspaceLeaf } from 'obsidian';
 import IconicPlugin, { Category, FileItem, TabItem, STRINGS } from 'src/IconicPlugin.js';
 import IconManager from 'src/managers/IconManager.js';
 import RuleEditor from 'src/dialogs/RuleEditor.js';
 import IconPicker from 'src/dialogs/IconPicker.js';
+import MenuManager from './MenuManager.js';
 
 /**
  * Handles icons in workspace tab headers.
@@ -15,6 +16,14 @@ export default class TabIconManager extends IconManager {
 		// @ts-expect-error (Vertical Tabs API)
 		this.plugin.registerEvent(this.app.workspace.on('vertical-tabs:render-tab-icon',
 			(leaf: WorkspaceLeaf, iconEl: HTMLElement) => { this.refreshVerticalTabIcon(leaf, iconEl); }
+		));
+		// @ts-expect-error (Vertical Tabs API)
+		this.plugin.registerEvent(this.app.workspace.on('vertical-tabs:on-tab-menu',
+			(menu: Menu, leaf: WorkspaceLeaf) => this.onVerticalTabMenu(menu, leaf)
+		));
+		// @ts-expect-error (Vertical Tabs API)
+		this.plugin.registerEvent(this.app.workspace.on('vertical-tabs:on-tabs-menu',
+			(menu: Menu, leaves: WorkspaceLeaf[]) => this.onVerticalTabsMenu(menu, leaves)
 		));
 
 		// Refresh icons in tab selector dropdowns ▼
@@ -231,21 +240,23 @@ export default class TabIconManager extends IconManager {
 		this.plugin.menuManager?.closeAndFlush();
 
 		if (tabCategory === 'file') {
-			this.onFileContextMenu(this.plugin.getFileItem(tabId));
+			this.onFileContextMenu(this.plugin.menuManager, this.plugin.getFileItem(tabId));
 		} else {
 			const tab = this.plugin.getTabItem(tabId);
-			if (tab) this.onTabContextMenu(tab);
+			if (tab) this.onTabContextMenu(this.plugin.menuManager, tab);
 		}
 	}
 
 	/**
 	 * Add custom items to a tab menu.
 	 */
-	private onTabContextMenu(tab: TabItem): void {
-		this.plugin.menuManager?.flush();
+	private onTabContextMenu(menu: Menu | MenuManager | undefined, tab: TabItem): void {
+		if (menu instanceof MenuManager) {
+			menu.flush();
+		}
 
 		// Change icon
-		this.plugin.menuManager?.addItemAfter('close', item => item
+		this.addMenuItemAfter(menu, 'close', item => item
 			.setTitle(STRINGS.menu.changeIcon)
 			.setIcon('lucide-image-plus')
 			.setSection('icon')
@@ -257,7 +268,7 @@ export default class TabIconManager extends IconManager {
 
 		// Remove icon / Reset color
 		if (tab.icon || tab.color) {
-			this.plugin.menuManager?.addItem(item => item
+			this.addMenuItem(menu, item => item
 				.setTitle(tab.icon ? STRINGS.menu.removeIcon : STRINGS.menu.resetColor)
 				.setIcon(tab.icon ? 'lucide-image-minus' : 'lucide-rotate-ccw')
 				.setSection('icon')
@@ -270,13 +281,55 @@ export default class TabIconManager extends IconManager {
 	}
 
 	/**
+	 * Add custom items to a multi-select tab menu (for Vertical Tabs).
+	 */
+	private onTabsContextMenu(menu: Menu, tabs: TabItem[]): void {
+		const firstTab = tabs.first();
+		if (!firstTab) return;
+
+		const changeTitle = tabs.length === 1
+			? STRINGS.menu.changeIcon
+			: STRINGS.menu.changeIcons.replace('{#}', tabs.length.toString());
+		menu.addItem(item => item
+			.setTitle(changeTitle)
+			.setIcon('lucide-image-plus')
+			.setSection('customization')
+			.onClick(() => {
+				IconPicker.openMulti(this.plugin, tabs, (newIcon, newColor) => {
+					this.plugin.saveTabIcons(tabs, newIcon, newColor);
+					this.plugin.refreshManagers('file', 'tab');
+				});
+			})
+		);
+
+		const anyIcons = tabs.some(tab => tab.icon);
+		const anyColors = tabs.some(tab => tab.color);
+		const removalTitle = anyIcons
+			? STRINGS.menu.removeIcons.replace('{#}', tabs.length.toString())
+			: STRINGS.menu.resetColors.replace('{#}', tabs.length.toString());
+		if (anyIcons || anyColors) {
+			menu.addItem(item => item
+				.setTitle(removalTitle)
+				.setIcon(anyIcons ? 'lucide-image-minus' : 'lucide-rotate-ccw')
+				.setSection('customization')
+				.onClick(() => {
+					this.plugin.saveTabIcons(tabs, null, null);
+					this.plugin.refreshManagers('file', 'tab');
+				})
+			);
+		}
+	}
+
+	/**
 	 * Add custom items to a file tab menu.
 	 */
-	private onFileContextMenu(file: FileItem): void {
-		this.plugin.menuManager?.flush();
+	private onFileContextMenu(menu: Menu | MenuManager | undefined, file: FileItem): void {
+		if (menu instanceof MenuManager) {
+			menu.flush();
+		}
 
 		// Change icon
-		this.plugin.menuManager?.addItemAfter('close', item => item
+		this.addMenuItemAfter(menu, 'close', item => item
 			.setTitle(STRINGS.menu.changeIcon)
 			.setIcon('lucide-image-plus')
 			.setSection('icon')
@@ -288,7 +341,7 @@ export default class TabIconManager extends IconManager {
 
 		// Remove icon / Reset color
 		if (file.icon || file.color) {
-			this.plugin.menuManager?.addItem(item => item
+			this.addMenuItem(menu, item => item
 				.setTitle(file.icon ? STRINGS.menu.removeIcon : STRINGS.menu.resetColor)
 				.setIcon(file.icon ? 'lucide-image-minus' : 'lucide-rotate-ccw')
 				.setSection('icon')
@@ -302,7 +355,7 @@ export default class TabIconManager extends IconManager {
 		// Edit rule
 		const rule = this.plugin.ruleManager?.checkRuling('file', file.id);
 		if (rule) {
-			this.plugin.menuManager?.addItem(item => { item
+			this.addMenuItem(menu, item => { item
 				.setTitle(STRINGS.menu.editRule)
 				.setIcon('lucide-image-play')
 				.setSection('icon')
@@ -318,6 +371,68 @@ export default class TabIconManager extends IconManager {
 		}
 	}
 
+	/**
+	 * Replace Vertical Tabs' built-in "Change icon" item on the single-select tab menu.
+	 */
+	private onVerticalTabMenu(menu: Menu, leaf: WorkspaceLeaf): void {
+		if (!this.plugin.settings.showMenuActions) return;
+		const tab = this.plugin.getTabItemFromLeaf(leaf);
+		if (tab.category === 'file') {
+			this.replaceVerticalSetIcon(menu, () => this.onFileContextMenu(menu, this.plugin.getFileItem(tab.id)));
+		} else {
+			this.replaceVerticalSetIcon(menu, () => this.onTabContextMenu(menu, tab));
+		}
+	}
+
+	/**
+	 * Replace Vertical Tabs' built-in "Change icon" item on the multi-select tab menu.
+	 */
+	private onVerticalTabsMenu(menu: Menu, leaves: WorkspaceLeaf[]): void {
+		if (!this.plugin.settings.showMenuActions) return;
+		const items = leaves.map(leaf => this.plugin.getTabItemFromLeaf(leaf));
+		this.replaceVerticalSetIcon(menu, () => this.onTabsContextMenu(menu, items));
+	}
+
+	/**
+	 * Remove the item with VTMenuAction "set-icon" and insert replacements at that index.
+	 */
+	private replaceVerticalSetIcon(menu: Menu, addItems: () => void): void {
+		// @ts-expect-error (Private API)
+		const items: unknown[] = menu.items;
+		const index = items.findIndex(item => (item as { VTMenuAction?: string }).VTMenuAction === 'set-icon');
+		if (index === -1) return;
+		items.splice(index, 1);
+		const start = items.length;
+		addItems();
+		const added = items.splice(start, items.length - start);
+		items.splice(index, 0, ...added);
+	}
+
+	/**
+	 * Unified method to add a menu item after a specific section to a menu or menu manager.
+	 */
+	private addMenuItemAfter(
+		menu: Menu | MenuManager | undefined,
+		preSections: string | string[],
+		callback: (item: MenuItem) => void
+	): void {
+		if (menu instanceof MenuManager) {
+			menu.addItemAfter(preSections, callback);
+		} else {
+			menu?.addItem(callback);
+		}
+	}
+
+	/**
+	 * Unified method to add a menu item to a menu or menu manager.
+	 */
+	private addMenuItem(
+		menu: Menu | MenuManager | undefined,
+		callback: (item: MenuItem) => void
+	): void {
+		menu?.addItem(callback);
+	}
+	
 	/**
 	 * @override
 	 */

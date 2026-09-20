@@ -1068,6 +1068,34 @@ export default class IconicPlugin extends Plugin {
 	}
 
 	/**
+	 * Save multiple tab icon changes to settings.
+	 * @param icon If undefined, leave icons unchanged
+	 * @param color If undefined, leave colors unchanged
+	 */
+	saveTabIcons(tabs: TabItem[], icon: string | null | undefined, color: string | null | undefined): void {
+		const triggers: Set<RuleTrigger> = new Set();
+		for (const tab of tabs) {
+			if (icon !== undefined) tab.icon = icon;
+			if (color !== undefined) tab.color = color;
+			switch (tab.category) {
+				case 'file': {
+					const fileBase = this.settings.fileIcons[tab.id];
+					if (icon !== fileBase?.icon) triggers.add('icon');
+					if (color !== fileBase?.color) triggers.add('color');
+					this.updateIconSetting(this.settings.fileIcons, tab.id, tab.icon, tab.color);
+					break;
+				}
+				default: {
+					this.updateIconSetting(this.settings.tabIcons, tab.id, tab.icon, tab.color);
+					break;
+				}
+			}
+		}
+		void this.saveSettings();
+		this.ruleManager?.triggerRulings('file', ...triggers);
+	}
+
+	/**
 	 * Save file icon changes to settings.
 	 */
 	saveFileIcon(file: FileItem, icon: string | null, color: string | null): void {
