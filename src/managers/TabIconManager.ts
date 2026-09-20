@@ -250,7 +250,7 @@ export default class TabIconManager extends IconManager {
 	/**
 	 * Add custom items to a tab menu.
 	 */
-	private onTabContextMenu(menu: Menu | MenuManager | undefined, tab: TabItem): void {
+	private onTabContextMenu(menu: Menu | MenuManager | undefined, tab: TabItem, section='icon'): void {
 		if (menu instanceof MenuManager) {
 			menu.flush();
 		}
@@ -259,7 +259,7 @@ export default class TabIconManager extends IconManager {
 		this.addMenuItemAfter(menu, 'close', item => item
 			.setTitle(STRINGS.menu.changeIcon)
 			.setIcon('lucide-image-plus')
-			.setSection('icon')
+			.setSection(section)
 			.onClick(() => IconPicker.openSingle(this.plugin, tab, (newIcon, newColor) => {
 				this.plugin.saveTabIcon(tab, newIcon, newColor);
 				this.plugin.refreshManagers('tab');
@@ -271,7 +271,7 @@ export default class TabIconManager extends IconManager {
 			this.addMenuItem(menu, item => item
 				.setTitle(tab.icon ? STRINGS.menu.removeIcon : STRINGS.menu.resetColor)
 				.setIcon(tab.icon ? 'lucide-image-minus' : 'lucide-rotate-ccw')
-				.setSection('icon')
+				.setSection(section)
 				.onClick(() => {
 					this.plugin.saveTabIcon(tab, null, null);
 					this.plugin.refreshManagers('tab');
@@ -323,7 +323,7 @@ export default class TabIconManager extends IconManager {
 	/**
 	 * Add custom items to a file tab menu.
 	 */
-	private onFileContextMenu(menu: Menu | MenuManager | undefined, file: FileItem): void {
+	private onFileContextMenu(menu: Menu | MenuManager | undefined, file: FileItem, section='icon'): void {
 		if (menu instanceof MenuManager) {
 			menu.flush();
 		}
@@ -332,7 +332,7 @@ export default class TabIconManager extends IconManager {
 		this.addMenuItemAfter(menu, 'close', item => item
 			.setTitle(STRINGS.menu.changeIcon)
 			.setIcon('lucide-image-plus')
-			.setSection('icon')
+			.setSection(section)
 			.onClick(() => IconPicker.openSingle(this.plugin, file, (newIcon, newColor) => {
 				this.plugin.saveFileIcon(file, newIcon, newColor);
 				this.plugin.refreshManagers('file');
@@ -344,7 +344,7 @@ export default class TabIconManager extends IconManager {
 			this.addMenuItem(menu, item => item
 				.setTitle(file.icon ? STRINGS.menu.removeIcon : STRINGS.menu.resetColor)
 				.setIcon(file.icon ? 'lucide-image-minus' : 'lucide-rotate-ccw')
-				.setSection('icon')
+				.setSection(section)
 				.onClick(() => {
 					this.plugin.saveFileIcon(file, null, null);
 					this.plugin.refreshManagers('file');
@@ -358,7 +358,7 @@ export default class TabIconManager extends IconManager {
 			this.addMenuItem(menu, item => { item
 				.setTitle(STRINGS.menu.editRule)
 				.setIcon('lucide-image-play')
-				.setSection('icon')
+				.setSection(section)
 				.onClick(() => RuleEditor.open(this.plugin, 'file', rule, newRule => {
 					const isRulingChanged = newRule
 						? this.plugin.ruleManager?.saveRule('file', newRule)
@@ -378,9 +378,13 @@ export default class TabIconManager extends IconManager {
 		if (!this.plugin.settings.showMenuActions) return;
 		const tab = this.plugin.getTabItemFromLeaf(leaf);
 		if (tab.category === 'file') {
-			this.replaceVerticalSetIcon(menu, () => this.onFileContextMenu(menu, this.plugin.getFileItem(tab.id)));
+			this.replaceVerticalSetIcon(menu, () => {
+				this.onFileContextMenu(menu, this.plugin.getFileItem(tab.id), 'customization');
+			});
 		} else {
-			this.replaceVerticalSetIcon(menu, () => this.onTabContextMenu(menu, tab));
+			this.replaceVerticalSetIcon(menu, () => {
+				this.onTabContextMenu(menu, tab, 'customization');
+			});
 		}
 	}
 
